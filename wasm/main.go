@@ -18,6 +18,11 @@ var datasets = make(map[string]SessionData)
 func main() {
 	fmt.Println("WASM Engine: Parser & Store Loaded")
 	js.Global().Set("parseCSV", js.FuncOf(ParseCSV))
+
+	js.Global().Set("getDataset", js.FuncOf(GetDataset))
+	js.Global().Set("deleteDataset", js.FuncOf(DeleteDataset))
+	js.Global().Set("listDatasets", js.FuncOf(ListDatasets))
+	fmt.Println("Dataset Manager Loaded")
 	select {}
 }
 
