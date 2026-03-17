@@ -18,11 +18,12 @@ var datasets = make(map[string]SessionData)
 func main() {
 	fmt.Println("WASM Engine: Parser & Store Loaded")
 	js.Global().Set("parseCSV", js.FuncOf(ParseCSV))
-
 	js.Global().Set("getDataset", js.FuncOf(GetDataset))
 	js.Global().Set("deleteDataset", js.FuncOf(DeleteDataset))
 	js.Global().Set("listDatasets", js.FuncOf(ListDatasets))
 	js.Global().Set("filterDataset", js.FuncOf(FilterDataset))
+	js.Global().Set("sortDataset", js.FuncOf(SortDataset))
+	js.Global().Set("exportCSV", js.FuncOf(ExportCSV))
 	fmt.Println("Dataset Manager Loaded")
 	select {}
 }
@@ -36,6 +37,8 @@ func ParseCSV(this js.Value, args []js.Value) any {
 
 	csvRaw := args[0].String()
 	reader := csv.NewReader(strings.NewReader(csvRaw))
+	reader.FieldsPerRecord = -1 // Allow variable number of fields
+	reader.LazyQuotes = true
 
 	records, err := reader.ReadAll()
 	if err != nil {
@@ -46,15 +49,45 @@ func ParseCSV(this js.Value, args []js.Value) any {
 		return map[string]any{"error": "Empty CSV"}
 	}
 
-	headers := records[0]
+	rawHeaders := records[0]
+	var headers []string
+	var headerIndices []int
+
+	// Clean headers and ignore empty columns
+	for i, h := range rawHeaders {
+		trimH := strings.TrimSpace(h)
+		if trimH != "" {
+			headers = append(headers, trimH)
+			headerIndices = append(headerIndices, i)
+		}
+	}
+
+	if len(headers) == 0 {
+		return map[string]any{"error": "No valid headers found"}
+	}
+
 	var structuredRows []map[string]any
 	var jsRows []any
 
 	for _, record := range records[1:] {
+		// Check if row is completely empty
+		isEmptyRow := true
+		for _, val := range record {
+			if strings.TrimSpace(val) != "" {
+				isEmptyRow = false
+				break
+			}
+		}
+		if isEmptyRow {
+			continue
+		}
+
 		rowMap := make(map[string]any)
-		for i, val := range record {
-			if i < len(headers) {
-				rowMap[headers[i]] = val
+		for hIdx, colIdx := range headerIndices {
+			if colIdx < len(record) {
+				rowMap[headers[hIdx]] = strings.TrimSpace(record[colIdx])
+			} else {
+				rowMap[headers[hIdx]] = ""
 			}
 		}
 		structuredRows = append(structuredRows, rowMap)

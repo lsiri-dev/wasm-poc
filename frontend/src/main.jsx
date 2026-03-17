@@ -6,8 +6,9 @@ import './wasm_exec.js'
 async function initWasm() {
   const go = new window.Go(); 
 
+  // Add a cache-busting query parameter so the browser always loads the freshly compiled .wasm
   const result = await WebAssembly.instantiateStreaming(
-    fetch('/main.wasm'), 
+    fetch('/main.wasm?t=' + new Date().getTime()), 
     go.importObject 
   );
 
