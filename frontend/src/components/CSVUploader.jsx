@@ -5,68 +5,87 @@ export default function CSVUploader() {
   const [dataset, setDataset] = useState(null)
   const [sortRules, setSortRules] = useState([]) // Array of { column, dir }
   const [exportColumns, setExportColumns] = useState({}) // Object mapping column name to boolean
+  const [isUploading, setIsUploading] = useState(false)
+  const [isSorting, setIsSorting] = useState(false)
 
   const handleUpload = async (e) => {
     const file = e.target.files[0]
     if (!file) return
 
-    const text = await file.text()
-    
-    // Call the parseCSV function exported directly by WebAssembly (from main.go)
-    const result = window.parseCSV(text)
-    if (result && !result.error) {
-      setDatasetId(result.id)
-      setDataset(result)
-      setSortRules([])
+    setIsUploading(true)
+    // Yield to the browser to render the loading state before WASM blocks the thread
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    try {
+      const text = await file.text()
       
-      // Initialize all columns as selected for export
-      const initialExportCols = {}
-      result.columns.forEach(col => {
-        initialExportCols[col] = true
-      })
-      setExportColumns(initialExportCols)
-    } else {
-      console.error("Parse error:", result.error)
+      // Call the parseCSV function exported directly by WebAssembly (from main.go)
+      const result = window.parseCSV(text)
+      if (result && !result.error) {
+        setDatasetId(result.id)
+        setDataset(result)
+        setSortRules([])
+        
+        // Initialize all columns as selected for export
+        const initialExportCols = {}
+        result.columns.forEach(col => {
+          initialExportCols[col] = true
+        })
+        setExportColumns(initialExportCols)
+      } else {
+        console.error("Parse error:", result.error)
+      }
+    } finally {
+      setIsUploading(false)
+      e.target.value = null // reset input so same file can be uploaded again
     }
   }
 
-  const handleSort = (columnName, e) => {
+  const handleSort = async (columnName, e) => {
     if (!datasetId) return
     
-    const isShiftPressed = e.shiftKey;
-    let newRules = [...sortRules];
-    const existingIndex = newRules.findIndex(r => r.column === columnName);
+    setIsSorting(true)
+    // Yield to the browser to render the sorting state before WASM blocks the thread
+    await new Promise(resolve => setTimeout(resolve, 50))
 
-    if (!isShiftPressed) {
-        // Single column sort mode
-        if (existingIndex >= 0) {
-            const currentDir = newRules[existingIndex].dir;
-            newRules = [{ column: columnName, dir: currentDir === "asc" ? "desc" : "asc" }];
-        } else {
-            newRules = [{ column: columnName, dir: "asc" }];
-        }
-    } else {
-        // Multi column sort mode
-        if (existingIndex >= 0) {
-            // Cycle asc -> desc -> remove
-            if (newRules[existingIndex].dir === "asc") {
-                newRules[existingIndex].dir = "desc";
-            } else {
-                newRules.splice(existingIndex, 1);
-            }
-        } else {
-            newRules.push({ column: columnName, dir: "asc" });
-        }
-    }
+    try {
+      const isShiftPressed = e.shiftKey;
+      let newRules = [...sortRules];
+      const existingIndex = newRules.findIndex(r => r.column === columnName);
 
-    setSortRules(newRules);
-    
-    // Call the sortDataset WebAssembly function with multi-column rules array converted to JSON
-    const sortedResult = window.sortDataset(datasetId, JSON.stringify(newRules))
-    if (sortedResult && !sortedResult.error) {
-      setDataset(sortedResult)
-    } else {
-      console.error("Sort error:", sortedResult?.error)
+      if (!isShiftPressed) {
+          // Single column sort mode
+          if (existingIndex >= 0) {
+              const currentDir = newRules[existingIndex].dir;
+              newRules = [{ column: columnName, dir: currentDir === "asc" ? "desc" : "asc" }];
+          } else {
+              newRules = [{ column: columnName, dir: "asc" }];
+          }
+      } else {
+          // Multi column sort mode
+          if (existingIndex >= 0) {
+              // Cycle asc -> desc -> remove
+              if (newRules[existingIndex].dir === "asc") {
+                  newRules[existingIndex].dir = "desc";
+              } else {
+                  newRules.splice(existingIndex, 1);
+              }
+          } else {
+              newRules.push({ column: columnName, dir: "asc" });
+          }
+      }
+
+      setSortRules(newRules);
+      
+      // Call the sortDataset WebAssembly function with multi-column rules array converted to JSON
+      const sortedResult = window.sortDataset(datasetId, JSON.stringify(newRules))
+      if (sortedResult && !sortedResult.error) {
+        setDataset(sortedResult)
+      } else {
+        console.error("Sort error:", sortedResult?.error)
+      }
+    } finally {
+      setIsSorting(false)
     }
   }
 
@@ -127,10 +146,21 @@ export default function CSVUploader() {
   return (
     <div>
       <h2>Upload CSV</h2>
-      <input type="file" accept=".csv" onChange={handleUpload} />
+      <input type="file" accept=".csv" onChange={handleUpload} disabled={isUploading} />
       
-      {dataset && (
+      {isUploading && (
+        <div style={{ marginTop: "15px", color: "#007bff", fontWeight: "bold" }}>
+          Processing CSV with WebAssembly Engine... Please wait.
+        </div>
+      )}
+      
+      {dataset && !isUploading && (
         <div style={{ marginTop: "20px" }}>
+          {isSorting && (
+            <div style={{ marginBottom: "15px", color: "#dc3545", fontWeight: "bold" }}>
+              Sorting via WebAssembly engine...
+            </div>
+          )}
           <div style={{ padding: "15px", border: "1px solid #ccc", borderRadius: "8px", marginBottom: "20px", display: "inline-block", maxWidth: "100%", overflowX: "auto" }}>
             <h3 style={{ margin: "0 0 10px 0" }}>Export Settings</h3>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "15px" }}>
@@ -171,7 +201,7 @@ export default function CSVUploader() {
             </p>
           </div>
           
-          <div style={{ overflowX: "auto", maxHeight: "400px", marginTop: "10px" }}>
+          <div style={{ overflowX: "auto", maxHeight: "400px", marginTop: "10px", opacity: isSorting ? 0.5 : 1, pointerEvents: isSorting ? "none" : "auto" }}>
             <table border="1" cellPadding="8" style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead style={{ position: "sticky", top: 0, backgroundColor: "#f1f1f1" }}>
                 <tr>
