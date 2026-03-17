@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"syscall/js"
-	"time" 
+	"time"
 )
 
 type SessionData struct {
@@ -22,6 +22,7 @@ func main() {
 	js.Global().Set("getDataset", js.FuncOf(GetDataset))
 	js.Global().Set("deleteDataset", js.FuncOf(DeleteDataset))
 	js.Global().Set("listDatasets", js.FuncOf(ListDatasets))
+	js.Global().Set("filterDataset", js.FuncOf(FilterDataset))
 	fmt.Println("Dataset Manager Loaded")
 	select {}
 }
@@ -47,7 +48,7 @@ func ParseCSV(this js.Value, args []js.Value) any {
 
 	headers := records[0]
 	var structuredRows []map[string]any
-	var jsRows []any 
+	var jsRows []any
 
 	for _, record := range records[1:] {
 		rowMap := make(map[string]any)
@@ -75,7 +76,7 @@ func ParseCSV(this js.Value, args []js.Value) any {
 		"id":          datasetID,
 		"columns":     convertToAnySlice(headers),
 		"rows":        jsRows,
-		"parseTimeMs": duration.Milliseconds(), 
+		"parseTimeMs": duration.Milliseconds(),
 		"rowCount":    len(structuredRows),
 	}
 }
