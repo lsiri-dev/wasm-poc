@@ -126,16 +126,23 @@ func FilterDataset(this js.Value, args []js.Value) any {
 		return map[string]any{"error": "invalid rules JSON: " + err.Error()}
 	}
 
-	filtered := applyPipeline(data.Rows, rules)
-
-	rows := make([]any, len(filtered))
-	for i, r := range filtered {
-		rows[i] = r
+	if len(rules) == 0 {
+		data.Rows = append([]map[string]any(nil), data.BaseRows...)
+		datasets[id] = data
+		return map[string]any{
+			"id":       id,
+			"columns":  convertToAnySlice(data.Columns),
+			"rowCount": len(data.Rows),
+		}
 	}
 
+	filtered := applyPipeline(data.BaseRows, rules)
+	data.Rows = filtered
+	datasets[id] = data
+
 	return map[string]any{
+		"id":       id,
 		"columns":  convertToAnySlice(data.Columns),
-		"rows":     rows,
-		"rowCount": len(rows),
+		"rowCount": len(filtered),
 	}
 }

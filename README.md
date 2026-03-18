@@ -1,29 +1,48 @@
-# README #
+# wasm-poc
 
-This README would normally document whatever steps are necessary to get your application up and running.
+React + Go WASM proof-of-concept for CSV parsing, filtering, sorting, pagination, and export in a Web Worker.
 
-### What is this repository for? ###
+## Prerequisites
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+- Node.js 18+
+- Go 1.22+ (must be available in your terminal `PATH`)
 
-### How do I get set up? ###
+## Install frontend deps
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+```bash
+cd frontend
+npm install
+```
 
-### Contribution guidelines ###
+## Build WASM runtime
 
-* Writing tests
-* Code review
-* Other guidelines
+From `frontend/`:
 
-### Who do I talk to? ###
+```bash
+npm run build:wasm
+```
 
-* Repo owner or admin
-* Other community or team contact
+This command:
+
+- compiles `wasm/main.go` to `frontend/public/main.wasm`
+- refreshes `frontend/public/wasm_exec.js` from your local Go installation
+
+## Run locally
+
+```bash
+cd frontend
+npm run dev
+```
+
+If you want to always rebuild WASM before dev startup:
+
+```bash
+npm run dev:with-wasm
+```
+
+## Production build
+
+```bash
+cd frontend
+npm run build:all
+```

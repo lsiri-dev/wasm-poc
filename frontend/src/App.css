@@ -1,22 +1,238 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
 .app {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
+  padding: 24px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
+  color: #2c3e50;
 }
 
 h1 {
-  color: #333;
+  color: #1a202c;
   text-align: center;
+  font-size: 2.5rem;
+  margin: 0 0 8px 0;
+  font-weight: 700;
+  letter-spacing: -0.5px;
 }
 
 h2 {
-  color: #555;
+  color: #2c3e50;
+  font-size: 1.5rem;
+  margin: 24px 0 16px 0;
+  font-weight: 600;
+  border-bottom: 3px solid #4299e1;
+  padding-bottom: 8px;
 }
 
+h3 {
+  color: #2c3e50;
+  font-size: 1.125rem;
+  margin: 0 0 12px 0;
+  font-weight: 600;
+}
+
+/* File Input */
 input[type="file"] {
-  margin-top: 10px;
-  padding: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 2px solid #cbd5e0;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+input[type="file"]:hover:not(:disabled) {
+  border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+}
+
+input[type="file"]:disabled {
+  background: #f7fafc;
+  color: #a0aec0;
+  cursor: not-allowed;
+}
+
+/* Buttons */
+button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+  color: white;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #3182ce 0%, #2c5aa0 100%);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+button:disabled {
+  background: #cbd5e0;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Select & Input Fields */
+select,
+input[type="text"] {
+  padding: 8px 12px;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+select:hover:not(:disabled),
+input[type="text"]:hover:not(:disabled) {
+  border-color: #4299e1;
+}
+
+select:focus,
+input[type="text"]:focus {
+  outline: none;
+  border-color: #4299e1;
+  box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+}
+
+select:disabled,
+input[type="text"]:disabled {
+  background: #f7fafc;
+  color: #a0aec0;
+  cursor: not-allowed;
+}
+
+/* Panels & Cards */
+.filter-panel,
+.export-panel,
+.dataset-controls {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+/* Tables */
+table {
+  background: white;
+  border-collapse: collapse;
+  box-shadow: none;
+  width: 100%;
+}
+
+thead {
+  background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+}
+
+th {
+  text-align: left;
+  padding: 12px 16px;
+  color: #2c3e50;
+  font-weight: 600;
+  border-bottom: 2px solid #cbd5e0;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+th:hover {
+  background: #e2e8f0;
+}
+
+td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  color: #2c3e50;
+}
+
+tbody tr:hover {
+  background: #f7fafc;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Status Messages */
+.status-message {
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  margin: 12px 0;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.status-info {
+  background: #bee3f8;
+  color: #2c5282;
+  border-left: 4px solid #4299e1;
+}
+
+.status-error {
+  background: #fed7d7;
+  color: #742a2a;
+  border-left: 4px solid #f56565;
+}
+
+.status-success {
+  background: #c6f6d5;
+  color: #22543d;
+  border-left: 4px solid #48bb78;
+}
+
+/* Flex containers */
+.flex-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+label {
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+p {
+  margin: 0;
+  color: #718096;
 }

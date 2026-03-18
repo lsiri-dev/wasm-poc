@@ -9,8 +9,9 @@ import (
 )
 
 type SessionData struct {
-	Columns []string
-	Rows    []map[string]any
+	Columns  []string
+	BaseRows []map[string]any
+	Rows     []map[string]any
 }
 
 var datasets = make(map[string]SessionData)
@@ -19,6 +20,7 @@ func main() {
 	fmt.Println("WASM Engine: Parser & Store Loaded")
 	js.Global().Set("parseCSV", js.FuncOf(ParseCSV))
 	js.Global().Set("getDataset", js.FuncOf(GetDataset))
+	js.Global().Set("getPage", js.FuncOf(GetPage))
 	js.Global().Set("deleteDataset", js.FuncOf(DeleteDataset))
 	js.Global().Set("listDatasets", js.FuncOf(ListDatasets))
 	js.Global().Set("filterDataset", js.FuncOf(FilterDataset))
@@ -67,7 +69,6 @@ func ParseCSV(this js.Value, args []js.Value) any {
 	}
 
 	var structuredRows []map[string]any
-	var jsRows []any
 
 	for _, record := range records[1:] {
 		// Check if row is completely empty
@@ -91,13 +92,15 @@ func ParseCSV(this js.Value, args []js.Value) any {
 			}
 		}
 		structuredRows = append(structuredRows, rowMap)
-		jsRows = append(jsRows, rowMap)
 	}
+
+	baseRows := append([]map[string]any(nil), structuredRows...)
 
 	datasetID := fmt.Sprintf("dataset_%d", len(datasets)+1)
 	datasets[datasetID] = SessionData{
-		Columns: headers,
-		Rows:    structuredRows,
+		Columns:  headers,
+		BaseRows: baseRows,
+		Rows:     structuredRows,
 	}
 
 	// Calculate duration
@@ -108,7 +111,6 @@ func ParseCSV(this js.Value, args []js.Value) any {
 	return map[string]any{
 		"id":          datasetID,
 		"columns":     convertToAnySlice(headers),
-		"rows":        jsRows,
 		"parseTimeMs": duration.Milliseconds(),
 		"rowCount":    len(structuredRows),
 	}
