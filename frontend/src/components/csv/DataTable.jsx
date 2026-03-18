@@ -17,7 +17,7 @@ export default function DataTable({ columns, rows, sortRules, isBusy, onSort }) 
         position: "relative",
         overflowX: "auto",
         overflowY: "auto",
-        maxHeight: "500px",
+        maxHeight: "650px",
         marginTop: "20px",
         opacity: isBusy ? 0.5 : 1,
         pointerEvents: isBusy ? "none" : "auto",
