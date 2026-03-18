@@ -32,6 +32,14 @@ func SortDataset(this js.Value, args []js.Value) any {
 		return map[string]any{"error": "dataset not found"}
 	}
 
+	if len(rules) == 0 {
+		return map[string]any{
+			"id":       id,
+			"columns":  convertToAnySlice(data.Columns),
+			"rowCount": len(data.Rows),
+		}
+	}
+
 	// Sort the rows in memory using SliceStable to maintain existing ordering
 	// where values are identical.
 	sort.SliceStable(data.Rows, func(i, j int) bool {
@@ -72,15 +80,11 @@ func SortDataset(this js.Value, args []js.Value) any {
 		return false
 	})
 
-	// Return sorted dataset
-	rows := make([]any, len(data.Rows))
-	for i, r := range data.Rows {
-		rows[i] = r
-	}
+	datasets[id] = data
 
 	return map[string]any{
+		"id":       id,
 		"columns":  convertToAnySlice(data.Columns),
-		"rows":     rows,
-		"rowCount": len(rows),
+		"rowCount": len(data.Rows),
 	}
 }

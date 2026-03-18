@@ -1,229 +1,445 @@
-import React, { useState } from "react"
+import { useMemo, useState } from "react"
+import { useWasmWorker } from "../hooks/useWasmWorker"
+import DatasetControls from "./csv/DatasetControls"
+import FilterPanel from "./csv/FilterPanel"
+import ExportPanel from "./csv/ExportPanel"
+import DataTable from "./csv/DataTable"
+import PaginationAndMetrics from "./csv/PaginationAndMetrics"
+import { operatorOptions } from "./csv/constants"
+
+function buildNewRule(columns) {
+  return {
+    column: columns[0] || "",
+    operator: "eq",
+    value: "",
+    logic: "and"
+  }
+}
+
+function normalizeMeta(payload) {
+  return {
+    id: payload?.id || null,
+    columns: payload?.columns || [],
+    rowCount: payload?.rowCount || 0,
+    parseTimeMs: payload?.parseTimeMs
+  }
+}
 
 export default function CSVUploader() {
+  const { isReady, initError, postAction } = useWasmWorker()
+
   const [datasetId, setDatasetId] = useState(null)
-  const [dataset, setDataset] = useState(null)
-  const [sortRules, setSortRules] = useState([]) // Array of { column, dir }
-  const [exportColumns, setExportColumns] = useState({}) // Object mapping column name to boolean
+  const [datasetIds, setDatasetIds] = useState([])
+  const [columns, setColumns] = useState([])
+  const [rows, setRows] = useState([])
+  const [rowCount, setRowCount] = useState(0)
+
+  const [sortRules, setSortRules] = useState([])
+  const [filterRules, setFilterRules] = useState([])
+  const [exportColumns, setExportColumns] = useState({})
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const [rowsPerPage, setRowsPerPage] = useState(200)
+
   const [isUploading, setIsUploading] = useState(false)
+  const [isPaging, setIsPaging] = useState(false)
   const [isSorting, setIsSorting] = useState(false)
+  const [isFiltering, setIsFiltering] = useState(false)
 
-  const handleUpload = async (e) => {
-    const file = e.target.files[0]
-    if (!file) return
+  const [errorMessage, setErrorMessage] = useState("")
+  const [timings, setTimings] = useState({ parseMs: null, sortMs: null, filterMs: null })
 
-    setIsUploading(true)
-    // Yield to the browser to render the loading state before WASM blocks the thread
-    await new Promise(resolve => setTimeout(resolve, 50))
+  const totalPages = useMemo(() => Math.max(1, Math.ceil((rowCount || 0) / rowsPerPage)), [rowCount, rowsPerPage])
+  const isBusy = !isReady || isUploading || isPaging || isSorting || isFiltering
+
+  const initializeExportColumns = (nextColumns) => {
+    const initialExportCols = {}
+    nextColumns.forEach((col) => {
+      initialExportCols[col] = true
+    })
+    setExportColumns(initialExportCols)
+  }
+
+  const refreshDatasetIds = async () => {
+    const response = await postAction("LIST_DATASETS")
+    setDatasetIds(Array.isArray(response.data) ? response.data : [])
+  }
+
+  const loadPage = async (nextPage, overrideDatasetId, overrideRowsPerPage) => {
+    const targetDatasetId = overrideDatasetId || datasetId
+    const targetPageSize = overrideRowsPerPage || rowsPerPage
+    if (!targetDatasetId) return
+
+    const safePage = Math.max(1, nextPage)
+    const offset = (safePage - 1) * targetPageSize
+
+    setIsPaging(true)
+    setErrorMessage("")
 
     try {
-      const text = await file.text()
-      
-      // Call the parseCSV function exported directly by WebAssembly (from main.go)
-      const result = window.parseCSV(text)
-      if (result && !result.error) {
-        setDatasetId(result.id)
-        setDataset(result)
-        setSortRules([])
-        
-        // Initialize all columns as selected for export
-        const initialExportCols = {}
-        result.columns.forEach(col => {
-          initialExportCols[col] = true
-        })
-        setExportColumns(initialExportCols)
-      } else {
-        console.error("Parse error:", result.error)
-      }
+      const response = await postAction("GET_PAGE", {
+        datasetId: targetDatasetId,
+        offset,
+        limit: targetPageSize
+      })
+
+      const payload = response.data || {}
+      setRows(payload.rows || [])
+      setColumns(payload.columns || [])
+      setRowCount(payload.rowCount || 0)
+      setCurrentPage(safePage)
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to load page")
     } finally {
-      setIsUploading(false)
-      e.target.value = null // reset input so same file can be uploaded again
+      setIsPaging(false)
     }
   }
 
-  const handleSort = async (columnName, e) => {
-    if (!datasetId) return
-    
-    setIsSorting(true)
-    // Yield to the browser to render the sorting state before WASM blocks the thread
-    await new Promise(resolve => setTimeout(resolve, 50))
+  const applyMetadata = (payload) => {
+    const meta = normalizeMeta(payload)
+    setDatasetId(meta.id)
+    setColumns(meta.columns)
+    setRowCount(meta.rowCount)
+
+    if (meta.parseTimeMs != null) {
+      setTimings(prev => ({ ...prev, parseMs: Number(meta.parseTimeMs) }))
+    }
+
+    return meta
+  }
+
+  const handleUpload = async (event) => {
+    if (!isReady) return
+    const file = event.target.files[0]
+    if (!file) return
+
+    setIsUploading(true)
+    setErrorMessage("")
 
     try {
-      const isShiftPressed = e.shiftKey;
-      let newRules = [...sortRules];
-      const existingIndex = newRules.findIndex(r => r.column === columnName);
+      const csvText = await file.text()
+      const response = await postAction("PARSE_CSV", { csvText })
+      const meta = applyMetadata(response.data)
+
+      setSortRules([])
+      const initialRules = buildNewRule(meta.columns)
+      setFilterRules(initialRules.column ? [initialRules] : [])
+      initializeExportColumns(meta.columns)
+
+      await refreshDatasetIds()
+      await loadPage(1, meta.id)
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to parse CSV")
+    } finally {
+      setIsUploading(false)
+      event.target.value = null
+    }
+  }
+
+  const handleDatasetSelect = async (id) => {
+    if (!isReady || !id) return
+
+    setErrorMessage("")
+    try {
+      const response = await postAction("GET_DATASET", { datasetId: id })
+      const meta = applyMetadata(response.data)
+
+      setSortRules([])
+      const initialRules = buildNewRule(meta.columns)
+      setFilterRules(initialRules.column ? [initialRules] : [])
+      initializeExportColumns(meta.columns)
+
+      await loadPage(1, id)
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to load dataset")
+    }
+  }
+
+  const handleDeleteDataset = async () => {
+    if (!isReady || !datasetId) return
+
+    const shouldDelete = window.confirm(`Delete ${datasetId}?`)
+    if (!shouldDelete) return
+
+    setErrorMessage("")
+
+    try {
+      await postAction("DELETE_DATASET", { datasetId })
+      await refreshDatasetIds()
+
+      const remaining = datasetIds.filter((id) => id !== datasetId)
+      if (remaining.length === 0) {
+        setDatasetId(null)
+        setColumns([])
+        setRows([])
+        setRowCount(0)
+        setSortRules([])
+        setFilterRules([])
+        setExportColumns({})
+        setCurrentPage(1)
+        return
+      }
+
+      await handleDatasetSelect(remaining[0])
+    } catch (error) {
+      setErrorMessage(error.message || "Failed to delete dataset")
+    }
+  }
+
+  const applyFilters = async (rules) => {
+    if (!datasetId) return
+
+    setIsFiltering(true)
+    setErrorMessage("")
+
+    try {
+      const cleanRules = rules.filter(rule => rule.column && rule.operator)
+      const response = await postAction("FILTER", {
+        datasetId,
+        rules: cleanRules
+      })
+
+      const meta = applyMetadata(response.data)
+      setTimings(prev => ({ ...prev, filterMs: response.executionMs ?? null }))
+      await loadPage(1, meta.id)
+    } catch (error) {
+      setErrorMessage(error.message || "Filter failed")
+    } finally {
+      setIsFiltering(false)
+    }
+  }
+
+  const handleSort = async (columnName, event) => {
+    if (!datasetId) return
+
+    setIsSorting(true)
+    setErrorMessage("")
+
+    try {
+      const isShiftPressed = event.shiftKey
+      let newRules = [...sortRules]
+      const existingIndex = newRules.findIndex(rule => rule.column === columnName)
 
       if (!isShiftPressed) {
-          // Single column sort mode
-          if (existingIndex >= 0) {
-              const currentDir = newRules[existingIndex].dir;
-              newRules = [{ column: columnName, dir: currentDir === "asc" ? "desc" : "asc" }];
-          } else {
-              newRules = [{ column: columnName, dir: "asc" }];
-          }
+        if (existingIndex >= 0) {
+          const currentDir = newRules[existingIndex].dir
+          newRules = [{ column: columnName, dir: currentDir === "asc" ? "desc" : "asc" }]
+        } else {
+          newRules = [{ column: columnName, dir: "asc" }]
+        }
       } else {
-          // Multi column sort mode
-          if (existingIndex >= 0) {
-              // Cycle asc -> desc -> remove
-              if (newRules[existingIndex].dir === "asc") {
-                  newRules[existingIndex].dir = "desc";
-              } else {
-                  newRules.splice(existingIndex, 1);
-              }
+        if (existingIndex >= 0) {
+          if (newRules[existingIndex].dir === "asc") {
+            newRules[existingIndex].dir = "desc"
           } else {
-              newRules.push({ column: columnName, dir: "asc" });
+            newRules.splice(existingIndex, 1)
           }
+        } else {
+          newRules.push({ column: columnName, dir: "asc" })
+        }
       }
 
-      setSortRules(newRules);
-      
-      // Call the sortDataset WebAssembly function with multi-column rules array converted to JSON
-      const sortedResult = window.sortDataset(datasetId, JSON.stringify(newRules))
-      if (sortedResult && !sortedResult.error) {
-        setDataset(sortedResult)
-      } else {
-        console.error("Sort error:", sortedResult?.error)
-      }
+      setSortRules(newRules)
+
+      const response = await postAction("SORT", {
+        datasetId,
+        rules: newRules
+      })
+
+      applyMetadata(response.data)
+      setTimings(prev => ({ ...prev, sortMs: response.executionMs ?? null }))
+      await loadPage(1, datasetId)
+    } catch (error) {
+      setErrorMessage(error.message || "Sort failed")
     } finally {
       setIsSorting(false)
     }
   }
 
+  const updateRule = (index, key, value) => {
+    setFilterRules((prev) => {
+      const next = [...prev]
+      next[index] = {
+        ...next[index],
+        [key]: value
+      }
+      return next
+    })
+  }
+
+  const addRule = () => {
+    if (columns.length === 0) return
+    setFilterRules((prev) => [
+      ...prev,
+      {
+        column: columns[0],
+        operator: "eq",
+        value: "",
+        logic: "and"
+      }
+    ])
+  }
+
+  const removeRule = (index) => {
+    setFilterRules((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleApplyFilters = async () => {
+    await applyFilters(filterRules)
+  }
+
+  const handleResetFilters = async () => {
+    const initialRule = buildNewRule(columns)
+    const nextRules = initialRule.column ? [initialRule] : []
+    setFilterRules(nextRules)
+    await applyFilters([])
+  }
+
   const toggleExportColumn = (columnName) => {
-    setExportColumns(prev => ({
+    setExportColumns((prev) => ({
       ...prev,
       [columnName]: !prev[columnName]
     }))
   }
 
   const toggleAllExportColumns = () => {
-    const allSelected = dataset.columns.every(col => exportColumns[col])
-    const newExportCols = {}
-    dataset.columns.forEach(col => {
-      newExportCols[col] = !allSelected
+    const allSelected = columns.length > 0 && columns.every(col => exportColumns[col])
+    const next = {}
+    columns.forEach((col) => {
+      next[col] = !allSelected
     })
-    setExportColumns(newExportCols)
+    setExportColumns(next)
   }
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!datasetId) return
-    
-    // Generate list of columns to export
-    const colsToExport = dataset.columns.filter(col => exportColumns[col])
-    
+
+    setErrorMessage("")
+    const colsToExport = columns.filter(col => exportColumns[col])
+
     if (colsToExport.length === 0) {
-      alert("Please select at least one column to export.");
-      return;
+      window.alert("Please select at least one column to export.")
+      return
     }
 
-    const colsJSON = JSON.stringify(colsToExport)
+    try {
+      const response = await postAction("EXPORT", {
+        datasetId,
+        columns: colsToExport
+      })
 
-    // Call the exportCSV WebAssembly function written in export.go
-    const csvString = window.exportCSV(datasetId, colsJSON)
-
-    // Trigger file download in the browser
-    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-    link.href = URL.createObjectURL(blob)
-    link.setAttribute("download", `exported_${datasetId}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+      const csvString = String(response.data || "")
+      const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" })
+      const link = document.createElement("a")
+      link.href = URL.createObjectURL(blob)
+      link.setAttribute("download", `exported_${datasetId}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(link.href)
+    } catch (error) {
+      setErrorMessage(error.message || "Export failed")
+    }
   }
 
-  const getSortIndicator = (columnName) => {
-    const index = sortRules.findIndex(r => r.column === columnName);
-    if (index === -1) return null;
-    const rule = sortRules[index];
-    const indicator = rule.dir === "asc" ? "↑" : "↓";
-    // Show priority number only if multiple rules are configured
-    if (sortRules.length > 1) {
-        return ` ${indicator} (${index + 1})`;
-    }
-    return ` ${indicator}`;
+  const handleRowsPerPageChange = async (nextSize) => {
+    setRowsPerPage(nextSize)
+    await loadPage(1, datasetId, nextSize)
+  }
+
+  const handlePrevPage = async () => {
+    if (currentPage <= 1) return
+    await loadPage(currentPage - 1)
+  }
+
+  const handleNextPage = async () => {
+    if (currentPage >= totalPages) return
+    await loadPage(currentPage + 1)
   }
 
   return (
     <div>
-      <h2>Upload CSV</h2>
-      <input type="file" accept=".csv" onChange={handleUpload} disabled={isUploading} />
-      
-      {isUploading && (
-        <div style={{ marginTop: "15px", color: "#007bff", fontWeight: "bold" }}>
-          Processing CSV with WebAssembly Engine... Please wait.
+      <DatasetControls
+        datasetId={datasetId}
+        datasetIds={datasetIds}
+        isBusy={isBusy}
+        onUpload={handleUpload}
+        onSelect={handleDatasetSelect}
+        onDelete={handleDeleteDataset}
+      />
+
+      {!isReady && !initError && (
+        <div className="status-message status-info">
+          Initializing WASM worker...
         </div>
       )}
-      
-      {dataset && !isUploading && (
+
+      {isUploading && (
+        <div className="status-message status-info">
+          Processing CSV in Web Worker... Please wait.
+        </div>
+      )}
+
+      {(initError || errorMessage) && (
+        <div className="status-message status-error">
+          {initError || errorMessage}
+        </div>
+      )}
+
+      {datasetId && columns.length > 0 && (
         <div style={{ marginTop: "20px" }}>
           {isSorting && (
-            <div style={{ marginBottom: "15px", color: "#dc3545", fontWeight: "bold" }}>
-              Sorting via WebAssembly engine...
+            <div className="status-message status-error" style={{ marginBottom: "15px" }}>
+              Sorting in Web Worker...
             </div>
           )}
-          <div style={{ padding: "15px", border: "1px solid #ccc", borderRadius: "8px", marginBottom: "20px", display: "inline-block", maxWidth: "100%", overflowX: "auto" }}>
-            <h3 style={{ margin: "0 0 10px 0" }}>Export Settings</h3>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "15px" }}>
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer", fontSize: "14px", fontWeight: "bold" }}>
-                <input 
-                  type="checkbox" 
-                  checked={dataset.columns.every(col => exportColumns[col])} 
-                  onChange={toggleAllExportColumns} 
-                  style={{ marginRight: "5px" }}
-                />
-                All Fields
-              </label>
-              
-              <span style={{ borderLeft: "2px solid #ddd", margin: "0 5px" }}></span>
-              
-              {dataset.columns.map((col, idx) => (
-                <label key={idx} style={{ display: "flex", alignItems: "center", cursor: "pointer", fontSize: "14px" }}>
-                  <input 
-                    type="checkbox" 
-                    checked={!!exportColumns[col]} 
-                    onChange={() => toggleExportColumn(col)} 
-                    style={{ marginRight: "5px" }}
-                  />
-                  {col}
-                </label>
-              ))}
+          {isFiltering && (
+            <div className="status-message status-info" style={{ marginBottom: "15px" }}>
+              Filtering in Web Worker...
             </div>
-            
-            <button onClick={handleExport} style={{ padding: "8px 16px", cursor: "pointer", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "4px" }}>
-              Export to CSV
-            </button>
-          </div>
+          )}
 
-          <div>
-            <p style={{ margin: 0 }}>Showing {dataset.rowCount} rows. </p>
-            <p style={{ margin: 0, fontSize: "14px", color: "gray" }}>
-              <strong>Tip:</strong> Click a header to sort. Hold <strong>Shift + Click</strong> to sort by multiple columns.
-            </p>
-          </div>
-          
-          <div style={{ overflowX: "auto", maxHeight: "400px", marginTop: "10px", opacity: isSorting ? 0.5 : 1, pointerEvents: isSorting ? "none" : "auto" }}>
-            <table border="1" cellPadding="8" style={{ borderCollapse: "collapse", width: "100%" }}>
-              <thead style={{ position: "sticky", top: 0, backgroundColor: "#f1f1f1" }}>
-                <tr>
-                  {dataset.columns.map((col, idx) => (
-                    <th key={idx} onClick={(e) => handleSort(col, e)} style={{ cursor: "pointer", userSelect: "none", color: "black", whiteSpace: "nowrap" }}>
-                      {col}
-                      <span style={{ color: "blue" }}>{getSortIndicator(col)}</span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {dataset.rows.map((row, rowIdx) => (
-                  <tr key={rowIdx}>
-                    {dataset.columns.map((col, colIdx) => (
-                      <td key={colIdx} style={{ color: "black", whiteSpace: "nowrap" }}>{row[col]}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <FilterPanel
+            columns={columns}
+            filterRules={filterRules}
+            operatorOptions={operatorOptions}
+            isBusy={isBusy}
+            onUpdateRule={updateRule}
+            onAddRule={addRule}
+            onRemoveRule={removeRule}
+            onApply={handleApplyFilters}
+            onReset={handleResetFilters}
+          />
+
+          <ExportPanel
+            columns={columns}
+            exportColumns={exportColumns}
+            isBusy={isBusy}
+            onToggleColumn={toggleExportColumn}
+            onToggleAll={toggleAllExportColumns}
+            onExport={handleExport}
+          />
+
+          <PaginationAndMetrics
+            datasetId={datasetId}
+            currentPage={currentPage}
+            totalPages={totalPages}
+            rowsPerPage={rowsPerPage}
+            totalRows={rowCount}
+            timings={timings}
+            isBusy={isBusy}
+            onRowsPerPageChange={handleRowsPerPageChange}
+            onPrevPage={handlePrevPage}
+            onNextPage={handleNextPage}
+          />
+
+          <DataTable
+            columns={columns}
+            rows={rows}
+            sortRules={sortRules}
+            isBusy={isBusy}
+            onSort={handleSort}
+          />
         </div>
       )}
     </div>
