@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { useWasmWorker } from "../hooks/useWasmWorker"
+import { useJsWorker } from "../hooks/useJsWorker"
 import DatasetControls from "./csv/DatasetControls"
 import FilterPanel from "./csv/FilterPanel"
 import ExportPanel from "./csv/ExportPanel"
@@ -26,7 +27,10 @@ function normalizeMeta(payload) {
 }
 
 export default function CSVUploader() {
-  const { isReady, initError, postAction } = useWasmWorker()
+  const [engine, setEngine] = useState("wasm")
+  const wasmWorker = useWasmWorker()
+  const jsWorker = useJsWorker()
+  const { isReady, initError, postAction } = engine === "wasm" ? wasmWorker : jsWorker
 
   const [datasetId, setDatasetId] = useState(null)
   const [datasetIds, setDatasetIds] = useState([])
@@ -359,6 +363,36 @@ export default function CSVUploader() {
 
   return (
     <div>
+      <h2>Upload CSV</h2>
+
+      <div style={{ display: "flex", alignItems: "center", marginBottom: "20px", padding: "10px", backgroundColor: "#f0f8ff", borderRadius: "5px", border: "1px solid #cce5ff" }}>
+        <h3 style={{ margin: "0 15px 0 0", fontSize: "16px" }}>Engine:</h3>
+        <label style={{ marginRight: "15px", cursor: "pointer", fontWeight: engine === "wasm" ? "bold" : "normal", color: "black" }}>
+          <input 
+            type="radio" 
+            name="engine" 
+            value="wasm" 
+            checked={engine === "wasm"} 
+            onChange={(e) => setEngine(e.target.value)} 
+            disabled={isBusy}
+            style={{ marginRight: "5px" }}
+          /> 
+          WebAssembly
+        </label>
+        <label style={{ cursor: "pointer", fontWeight: engine === "js" ? "bold" : "normal", color: "black" }}>
+          <input 
+            type="radio" 
+            name="engine" 
+            value="js" 
+            checked={engine === "js"} 
+            onChange={(e) => setEngine(e.target.value)} 
+            disabled={isBusy}
+            style={{ marginRight: "5px" }}
+          /> 
+          JavaScript
+        </label>
+      </div>
+      
       <DatasetControls
         datasetId={datasetId}
         datasetIds={datasetIds}
