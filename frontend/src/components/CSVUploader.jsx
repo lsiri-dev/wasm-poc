@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { useWasmWorker } from "../hooks/useWasmWorker"
 import { useJsWorker } from "../hooks/useJsWorker"
+import { useRustWorker } from "../hooks/useRustWorker"
 import DatasetControls from "./csv/DatasetControls"
 import FilterPanel from "./csv/FilterPanel"
 import ExportPanel from "./csv/ExportPanel"
@@ -30,7 +31,8 @@ export default function CSVUploader() {
   const [engine, setEngine] = useState("wasm")
   const wasmWorker = useWasmWorker()
   const jsWorker = useJsWorker()
-  const { isReady, initError, postAction } = engine === "wasm" ? wasmWorker : jsWorker
+  const rustWorker = useRustWorker()
+  const { isReady, initError, postAction } = engine === "wasm" ? wasmWorker : (engine === "js" ? jsWorker : rustWorker)
 
   const [datasetId, setDatasetId] = useState(null)
   const [datasetIds, setDatasetIds] = useState([])
@@ -377,7 +379,19 @@ export default function CSVUploader() {
             disabled={isBusy}
             style={{ marginRight: "5px" }}
           /> 
-          WebAssembly
+          WebAssembly (Go)
+        </label>
+        <label style={{ marginRight: "15px", cursor: "pointer", fontWeight: engine === "rust" ? "bold" : "normal", color: "black" }}>
+          <input 
+            type="radio" 
+            name="engine" 
+            value="rust" 
+            checked={engine === "rust"} 
+            onChange={(e) => setEngine(e.target.value)} 
+            disabled={isBusy}
+            style={{ marginRight: "5px" }}
+          /> 
+          WebAssembly (Rust)
         </label>
         <label style={{ cursor: "pointer", fontWeight: engine === "js" ? "bold" : "normal", color: "black" }}>
           <input 

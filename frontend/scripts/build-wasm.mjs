@@ -9,8 +9,10 @@ const __dirname = dirname(__filename)
 const frontendDir = resolve(__dirname, "..")
 const repoRoot = resolve(frontendDir, "..")
 const wasmDir = join(repoRoot, "wasm")
+const rustDir = join(repoRoot, "rust")
 const publicDir = join(frontendDir, "public")
 const wasmOutput = join(publicDir, "main.wasm")
+const rustOutput = join(publicDir, "rust")
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -83,3 +85,16 @@ try {
 
 console.log("[build:wasm] Built frontend/public/main.wasm")
 console.log("[build:wasm] Updated frontend/public/wasm_exec.js")
+
+try {
+  if (existsSync(rustDir)) {
+    console.log("[build:wasm] Building Rust WASM...")
+    run("wasm-pack", ["build", "--target", "web", "--out-dir", rustOutput], {
+      cwd: rustDir
+    })
+    console.log("[build:wasm] Built Rust WASM")
+  }
+} catch (error) {
+  console.error(`[build:wasm] Rust WASM build failed or wasm-pack not found. ${error.message}`)
+}
+
