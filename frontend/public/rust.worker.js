@@ -1,7 +1,13 @@
 import init, {
-  parseCSV, getPage, sortDataset, filterDataset,
-  getDataset, listDatasets, deleteDataset, exportCSV
-} from '/rust/rust_worker.js';
+  parseCSV,
+  getPage,
+  sortDataset,
+  filterDataset,
+  getDataset,
+  listDatasets,
+  deleteDataset,
+  exportCSV,
+} from "/rust_worker.js";
 
 self.window = self;
 
@@ -14,7 +20,7 @@ function postSuccess(requestId, action, data, executionMs) {
     action,
     ok: true,
     data,
-    executionMs
+    executionMs,
   });
 }
 
@@ -23,7 +29,7 @@ function postError(requestId, action, error) {
     requestId,
     action,
     ok: false,
-    error: error instanceof Error ? error.message : String(error)
+    error: error instanceof Error ? error.message : String(error),
   });
 }
 
@@ -68,7 +74,7 @@ self.onmessage = async (event) => {
         const executionMs = performance.now() - start;
         if (result?.error) throw new Error(result.error);
         if (result) {
-            result.parseTimeMs = executionMs;
+          result.parseTimeMs = executionMs;
         }
         postSuccess(requestId, action, result, executionMs);
         return;
@@ -76,7 +82,11 @@ self.onmessage = async (event) => {
 
       case "GET_PAGE": {
         ensureReady();
-        const result = getPage(payload.datasetId, payload.offset ?? 0, payload.limit ?? 200);
+        const result = getPage(
+          payload.datasetId,
+          payload.offset ?? 0,
+          payload.limit ?? 200,
+        );
         if (result?.error) throw new Error(result.error);
         postSuccess(requestId, action, result);
         return;
@@ -85,7 +95,10 @@ self.onmessage = async (event) => {
       case "SORT": {
         ensureReady();
         const start = performance.now();
-        const result = sortDataset(payload.datasetId, JSON.stringify(payload.rules || []));
+        const result = sortDataset(
+          payload.datasetId,
+          JSON.stringify(payload.rules || []),
+        );
         const executionMs = performance.now() - start;
         if (result?.error) throw new Error(result.error);
         postSuccess(requestId, action, result, executionMs);
@@ -95,7 +108,10 @@ self.onmessage = async (event) => {
       case "FILTER": {
         ensureReady();
         const start = performance.now();
-        const result = filterDataset(payload.datasetId, JSON.stringify(payload.rules || []));
+        const result = filterDataset(
+          payload.datasetId,
+          JSON.stringify(payload.rules || []),
+        );
         const executionMs = performance.now() - start;
         if (result?.error) throw new Error(result.error);
         postSuccess(requestId, action, result, executionMs);

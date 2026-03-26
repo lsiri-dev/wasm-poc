@@ -1,0 +1,15 @@
+{
+  "name": "rust_worker",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "rust_worker_bg.wasm",
+    "rust_worker.js",
+    "rust_worker.d.ts"
+  ],
+  "main": "rust_worker.js",
+  "types": "rust_worker.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

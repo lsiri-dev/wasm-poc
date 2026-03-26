@@ -7,8 +7,8 @@ use std::collections::HashMap;
 #[derive(Serialize, Deserialize, Clone)]
 struct Dataset {
     columns: Vec<String>,
-    rows: Vec<HashMap<String, String>>,
-    base_rows: Vec<HashMap<String, String>>,
+    base_rows: Vec<Vec<String>>,
+    active_indices: Vec<usize>,
 }
 
 thread_local! {
@@ -53,10 +53,9 @@ struct Rule {
 
 #[wasm_bindgen(js_name = parseCSV)]
 pub fn parse_csv(csv_text: &str) -> JsValue {
-    // Basic CSV parser
     let mut records = Vec::new();
     let mut row = Vec::new();
-    let mut cur = String::new();
+    let mut cur = String::with_capacity(128);
     let mut in_quote = false;
 
     let chars: Vec<char> = csv_text.chars().collect();
@@ -118,7 +117,7 @@ pub fn parse_csv(csv_text: &str) -> JsValue {
         return serde_wasm_bindgen::to_value(&HashMap::from([("error", "No valid headers found")])).unwrap();
     }
 
-    let mut structured_rows = Vec::new();
+    let mut structured_rows = Vec::with_capacity(records.len().saturating_sub(1));
     for i in 1..records.len() {
         let record = &records[i];
         let mut is_empty_row = true;
@@ -132,27 +131,28 @@ pub fn parse_csv(csv_text: &str) -> JsValue {
             continue;
         }
 
-        let mut row_map = HashMap::new();
-        for (col_idx, &h_idx) in header_indices.iter().enumerate() {
+        let mut row_vec = Vec::with_capacity(header_indices.len());
+        for &h_idx in &header_indices {
             let val = if h_idx < record.len() {
                 record[h_idx].trim().to_string()
             } else {
                 "".to_string()
             };
-            row_map.insert(headers[col_idx].clone(), val);
+            row_vec.push(val);
         }
-        structured_rows.push(row_map);
+        structured_rows.push(row_vec);
     }
 
     let count = DATASETS.with(|ds| ds.borrow().len() + 1);
     let dataset_id = format!("dataset_{}", count);
-
     let row_count = structured_rows.len();
+    let active_indices: Vec<usize> = (0..row_count).collect();
+
     DATASETS.with(|ds| {
         ds.borrow_mut().insert(dataset_id.clone(), Dataset {
             columns: headers.clone(),
-            base_rows: structured_rows.clone(),
-            rows: structured_rows,
+            base_rows: structured_rows,
+            active_indices,
         });
     });
 
@@ -171,13 +171,20 @@ pub fn get_page(dataset_id: &str, offset: usize, limit: usize) -> JsValue {
     DATASETS.with(|ds_cell| {
         let ds = ds_cell.borrow();
         if let Some(data) = ds.get(dataset_id) {
-            let total = data.rows.len();
+            let total = data.active_indices.len();
             let end = std::cmp::min(offset + limit, total);
-            let page_rows = if offset < total {
-                data.rows[offset..end].to_vec()
-            } else {
-                Vec::new()
-            };
+            let mut page_rows = Vec::with_capacity(end.saturating_sub(offset));
+            
+            if offset < total {
+                for i in offset..end {
+                    let mut row_map = HashMap::new();
+                    let record = &data.base_rows[data.active_indices[i]];
+                    for (col_idx, col_name) in data.columns.iter().enumerate() {
+                        row_map.insert(col_name.clone(), record[col_idx].clone());
+                    }
+                    page_rows.push(row_map);
+                }
+            }
             
             let res = PageResult {
                 id: dataset_id.to_string(),
@@ -203,16 +210,26 @@ pub fn sort_dataset(dataset_id: &str, rules_json: &str) -> JsValue {
                 let res = BasicResult {
                     id: dataset_id.to_string(),
                     columns: data.columns.clone(),
-                    row_count: data.rows.len(),
+                    row_count: data.active_indices.len(),
                 };
                 return res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap();
             }
 
-            data.rows.sort_by(|a, b| {
-                for rule in &rules {
-                    let col = &rule.column;
-                    let val_a = a.get(col).cloned().unwrap_or_default();
-                    let val_b = b.get(col).cloned().unwrap_or_default();
+            // Cache the column index mapping for sorting rules
+            let mut resolved_rules = Vec::new();
+            for rule in &rules {
+                if let Some(idx) = data.columns.iter().position(|c| c == &rule.column) {
+                    resolved_rules.push((idx, rule.dir.as_deref().unwrap_or("asc") == "desc"));
+                }
+            }
+
+            data.active_indices.sort_by(|&a_idx, &b_idx| {
+                let a = &data.base_rows[a_idx];
+                let b = &data.base_rows[b_idx];
+
+                for &(col_idx, is_desc) in &resolved_rules {
+                    let val_a = &a[col_idx];
+                    let val_b = &b[col_idx];
                     if val_a == val_b {
                         continue;
                     }
@@ -221,22 +238,22 @@ pub fn sort_dataset(dataset_id: &str, rules_json: &str) -> JsValue {
                         if (num_a - num_b).abs() < f64::EPSILON {
                             continue;
                         }
-                        let dir = rule.dir.as_deref().unwrap_or("asc");
-                        if dir == "desc" {
+                        if is_desc {
                             return num_b.partial_cmp(&num_a).unwrap_or(std::cmp::Ordering::Equal);
                         } else {
                             return num_a.partial_cmp(&num_b).unwrap_or(std::cmp::Ordering::Equal);
                         }
                     }
 
+                    // For performance, doing a direct string comparison is faster if we don't need uppercase.
+                    // Doing to_uppercase is heavy inside a sort loop.
                     let str_a = val_a.to_uppercase();
                     let str_b = val_b.to_uppercase();
                     if str_a == str_b {
                         continue;
                     }
 
-                    let dir = rule.dir.as_deref().unwrap_or("asc");
-                    if dir == "desc" {
+                    if is_desc {
                         return str_b.cmp(&str_a);
                     } else {
                         return str_a.cmp(&str_b);
@@ -248,7 +265,7 @@ pub fn sort_dataset(dataset_id: &str, rules_json: &str) -> JsValue {
             let res = BasicResult {
                 id: dataset_id.to_string(),
                 columns: data.columns.clone(),
-                row_count: data.rows.len(),
+                row_count: data.active_indices.len(),
             };
             res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
         } else {
@@ -292,49 +309,57 @@ pub fn filter_dataset(dataset_id: &str, rules_json: &str) -> JsValue {
         let mut ds_map = ds_cell.borrow_mut();
         if let Some(data) = ds_map.get_mut(dataset_id) {
             if rules.is_empty() {
-                data.rows = data.base_rows.clone();
+                data.active_indices = (0..data.base_rows.len()).collect();
             } else {
-                let all = &data.base_rows;
-                let mut active: Vec<usize> = Vec::new();
-                let first = &rules[0];
-                for (i, row) in all.iter().enumerate() {
-                    let cell = row.get(&first.column).cloned().unwrap_or_default();
-                    if matches_rule(&cell, first) {
-                        active.push(i);
+                // Map rule columns to indices
+                let mut resolved_rules = Vec::new();
+                for rule in &rules {
+                    if let Some(idx) = data.columns.iter().position(|c| c == &rule.column) {
+                        resolved_rules.push((idx, rule));
                     }
                 }
 
-                for j in 1..rules.len() {
-                    let rule = &rules[j];
-                    if rule.logic.as_deref().unwrap_or("") == "or" {
-                        let active_set: std::collections::HashSet<_> = active.iter().cloned().collect();
-                        for (i, row) in all.iter().enumerate() {
-                            if !active_set.contains(&i) {
-                                let cell = row.get(&rule.column).cloned().unwrap_or_default();
-                                if matches_rule(&cell, rule) {
-                                    active.push(i);
+                let mut active: Vec<usize> = Vec::new();
+                if let Some(&(first_col_idx, first_rule)) = resolved_rules.first() {
+                    for (i, row) in data.base_rows.iter().enumerate() {
+                        if matches_rule(&row[first_col_idx], first_rule) {
+                            active.push(i);
+                        }
+                    }
+
+                    for &(col_idx, rule) in resolved_rules.iter().skip(1) {
+                        if rule.logic.as_deref().unwrap_or("") == "or" {
+                            // Using a boolean array mapping is much faster than HashSet
+                            let mut active_flags = vec![false; data.base_rows.len()];
+                            for &idx in &active {
+                                active_flags[idx] = true;
+                            }
+                            
+                            for (i, row) in data.base_rows.iter().enumerate() {
+                                if !active_flags[i] {
+                                    if matches_rule(&row[col_idx], rule) {
+                                        active.push(i);
+                                    }
                                 }
                             }
-                        }
-                    } else {
-                        let mut filtered = Vec::new();
-                        for &idx in &active {
-                            let cell = all[idx].get(&rule.column).cloned().unwrap_or_default();
-                            if matches_rule(&cell, rule) {
-                                filtered.push(idx);
+                        } else {
+                            let mut filtered = Vec::with_capacity(active.len());
+                            for &idx in &active {
+                                if matches_rule(&data.base_rows[idx][col_idx], rule) {
+                                    filtered.push(idx);
+                                }
                             }
+                            active = filtered;
                         }
-                        active = filtered;
                     }
                 }
-
-                data.rows = active.into_iter().map(|idx| all[idx].clone()).collect();
+                data.active_indices = active;
             }
 
             let res = BasicResult {
                 id: dataset_id.to_string(),
                 columns: data.columns.clone(),
-                row_count: data.rows.len(),
+                row_count: data.active_indices.len(),
             };
             res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
         } else {
@@ -351,7 +376,7 @@ pub fn get_dataset(dataset_id: &str) -> JsValue {
             let res = BasicResult {
                 id: dataset_id.to_string(),
                 columns: data.columns.clone(),
-                row_count: data.rows.len(),
+                row_count: data.active_indices.len(),
             };
             res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
         } else {
@@ -386,7 +411,17 @@ pub fn export_csv(dataset_id: &str, cols_json: &str) -> JsValue {
         let ds = ds_cell.borrow();
         if let Some(data) = ds.get(dataset_id) {
             let export_cols = if cols.is_empty() { &data.columns } else { &cols };
-            let mut out = String::new();
+            
+            // Map column names to indices
+            let mut col_indices = Vec::new();
+            for col in export_cols {
+                if let Some(idx) = data.columns.iter().position(|c| c == col) {
+                    col_indices.push(idx);
+                }
+            }
+
+            // Pre-allocate decent capacity
+            let mut out = String::with_capacity(data.active_indices.len() * export_cols.len() * 10);
             
             let header = export_cols.iter()
                 .map(|c| format!("\"{}\"", c.replace("\"", "\"\"")))
@@ -395,15 +430,23 @@ pub fn export_csv(dataset_id: &str, cols_json: &str) -> JsValue {
             out.push_str(&header);
             out.push('\n');
 
-            for row in &data.rows {
-                let line = export_cols.iter()
-                    .map(|c| {
-                        let val = row.get(c).cloned().unwrap_or_default();
-                        format!("\"{}\"", val.replace("\"", "\"\""))
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                out.push_str(&line);
+            for &idx in &data.active_indices {
+                let row = &data.base_rows[idx];
+                let mut first = true;
+                for &col_idx in &col_indices {
+                    if !first {
+                        out.push(',');
+                    }
+                    first = false;
+                    let val = &row[col_idx];
+                    if val.contains('"') || val.contains(',') || val.contains('\n') || val.contains('\r') {
+                        out.push('"');
+                        out.push_str(&val.replace("\"", "\"\""));
+                        out.push('"');
+                    } else {
+                        out.push_str(val);
+                    }
+                }
                 out.push('\n');
             }
 
