@@ -7,6 +7,7 @@ export default function PaginationAndMetrics({
   rowsPerPage,
   totalRows,
   timings,
+  timingDetails,
   isBusy,
   onRowsPerPageChange,
   onPrevPage,
@@ -14,6 +15,14 @@ export default function PaginationAndMetrics({
 }) {
   const rangeStart = totalRows === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1
   const rangeEnd = Math.min(currentPage * rowsPerPage, totalRows)
+
+  const formatMs = (value) => (value != null ? `${value.toFixed(2)} ms` : "-")
+
+  const renderBreakdown = (label, breakdown) => (
+    <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed #cbd5e0" }}>
+      <strong>{label}</strong>: in <strong>{formatMs(breakdown?.mainToWorkerMs)}</strong> | worker total <strong>{formatMs(breakdown?.workerTotalMs)}</strong> | compute <strong>{formatMs(breakdown?.workerComputeMs)}</strong> | worker overhead <strong>{formatMs(breakdown?.workerNonComputeMs)}</strong> | out <strong>{formatMs(breakdown?.workerToMainMs)}</strong> | roundtrip <strong>{formatMs(breakdown?.roundTripMs)}</strong>
+    </div>
+  )
 
   return (
     <>
@@ -28,6 +37,9 @@ export default function PaginationAndMetrics({
 
       <div style={{ marginTop: "12px", padding: "12px 16px", background: "#f0f4ff", borderRadius: "6px", border: "1px solid #cbd5e0", fontSize: "13px", color: "#2c3e50" }}>
         <strong>Benchmarks:</strong> Parse: <strong>{timings.parseMs != null ? `${timings.parseMs.toFixed(2)} ms` : "-"}</strong> | Sort: <strong>{timings.sortMs != null ? `${timings.sortMs.toFixed(2)} ms` : "-"}</strong> | Filter: <strong>{timings.filterMs != null ? `${timings.filterMs.toFixed(2)} ms` : "-"}</strong>
+        {renderBreakdown("Parse", timingDetails?.parse)}
+        {renderBreakdown("Sort", timingDetails?.sort)}
+        {renderBreakdown("Filter", timingDetails?.filter)}
       </div>
 
       <div style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>

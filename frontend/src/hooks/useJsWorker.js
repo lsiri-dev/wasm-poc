@@ -9,7 +9,7 @@ export function useJsWorker() {
   const [isReady, setIsReady] = useState(false)
   const [initError, setInitError] = useState("")
 
-  const postAction = useCallback((action, payload = {}) => {
+  const postAction = useCallback((action, payload = {}, transfer = []) => {
     if (!workerRef.current) {
       return Promise.reject(new Error("Worker is not initialized"))
     }
@@ -22,6 +22,7 @@ export function useJsWorker() {
     reqIdRef.current += 1
     const requestId = reqIdRef.current
     const signal = abortControllerRef.current?.signal
+    const clientSentAtEpoch = Date.now()
 
     return new Promise((resolve, reject) => {
       // Register abort listener for this specific request
@@ -34,8 +35,8 @@ export function useJsWorker() {
         signal.addEventListener("abort", handleAbort, { once: true })
       }
 
-      pendingRef.current.set(requestId, { resolve, reject, signal, handleAbort })
-      workerRef.current.postMessage({ requestId, action, payload })
+      pendingRef.current.set(requestId, { resolve, reject, signal, handleAbort, clientSentAtEpoch })
+      workerRef.current.postMessage({ requestId, action, payload, clientSentAtEpoch }, transfer)
     })
   }, [])
 
@@ -53,7 +54,7 @@ export function useJsWorker() {
         return
       }
 
-      const { requestId, ok, action, data, error, executionMs } = event.data || {}
+      const { requestId, ok, action, data, error, executionMs, trace } = event.data || {}
       if (requestId == null) {
         return
       }
@@ -74,7 +75,35 @@ export function useJsWorker() {
         return
       }
 
-      pending.resolve({ action, data, executionMs })
+      const clientReceivedAtEpoch = Date.now()
+      const workerReceivedAtEpoch = Number(trace?.workerReceivedAtEpoch ?? 0)
+      const workerRespondedAtEpoch = Number(trace?.workerRespondedAtEpoch ?? 0)
+      const sentAt = Number(pending.clientSentAtEpoch ?? 0)
+
+      const roundTripMs = sentAt > 0 ? clientReceivedAtEpoch - sentAt : null
+      const mainToWorkerMs = sentAt > 0 && workerReceivedAtEpoch > 0 ? workerReceivedAtEpoch - sentAt : null
+      const workerTotalMs = workerRespondedAtEpoch > 0 && workerReceivedAtEpoch > 0 ? workerRespondedAtEpoch - workerReceivedAtEpoch : null
+      const workerComputeMs = Number.isFinite(executionMs) ? executionMs : null
+      const workerNonComputeMs = workerTotalMs != null && workerComputeMs != null ? Math.max(0, workerTotalMs - workerComputeMs) : null
+      const workerToMainMs = workerRespondedAtEpoch > 0 ? clientReceivedAtEpoch - workerRespondedAtEpoch : null
+
+      pending.resolve({
+        action,
+        data,
+        executionMs,
+        timingBreakdown: {
+          roundTripMs,
+          mainToWorkerMs,
+          workerTotalMs,
+          workerComputeMs,
+          workerNonComputeMs,
+          workerToMainMs
+        },
+        trace: {
+          ...trace,
+          clientReceivedAtEpoch
+        }
+      })
     }
 
     worker.onerror = (event) => {

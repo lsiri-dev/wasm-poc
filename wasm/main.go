@@ -26,6 +26,9 @@ func main() {
 	js.Global().Set("filterDataset", js.FuncOf(FilterDataset))
 	js.Global().Set("sortDataset", js.FuncOf(SortDataset))
 	js.Global().Set("exportCSV", js.FuncOf(ExportCSV))
+	js.Global().Set("trainLinearRegression", js.FuncOf(TrainLinearRegression))
+	js.Global().Set("hashFeaturesU64", js.FuncOf(HashFeaturesU64))
+	js.Global().Set("hashFeaturesU64ForDataset", js.FuncOf(HashFeaturesU64ForDataset))
 	fmt.Println("Dataset Manager Loaded")
 	select {}
 }

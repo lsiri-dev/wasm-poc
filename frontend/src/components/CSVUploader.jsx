@@ -27,6 +27,51 @@ function normalizeMeta(payload) {
   }
 }
 
+function normalizeFloat64Array(values) {
+  if (values.length === 0) {
+    return new Float64Array(0)
+  }
+
+  let min = values[0]
+  let max = values[0]
+  for (let i = 1; i < values.length; i += 1) {
+    const value = values[i]
+    if (value < min) min = value
+    if (value > max) max = value
+  }
+
+  const normalized = new Float64Array(values.length)
+  const range = max - min
+  if (range === 0) {
+    return normalized
+  }
+
+  for (let i = 0; i < values.length; i += 1) {
+    normalized[i] = (values[i] - min) / range
+  }
+
+  return normalized
+}
+
+function prepareMLBenchmarkData(datasetRows = []) {
+  const experienceRaw = new Float64Array(datasetRows.length)
+  const salaryRaw = new Float64Array(datasetRows.length)
+
+  for (let i = 0; i < datasetRows.length; i += 1) {
+    const row = datasetRows[i] || {}
+    const experience = Number(row.experience)
+    const salary = Number(row.salary_usd)
+
+    experienceRaw[i] = Number.isFinite(experience) ? experience : 0
+    salaryRaw[i] = Number.isFinite(salary) ? salary : 0
+  }
+
+  return {
+    experienceArr: normalizeFloat64Array(experienceRaw),
+    salaryArr: normalizeFloat64Array(salaryRaw)
+  }
+}
+
 export default function CSVUploader() {
   const [engine, setEngine] = useState("wasm")
   const wasmWorker = useWasmWorker()
@@ -51,12 +96,15 @@ export default function CSVUploader() {
   const [isPaging, setIsPaging] = useState(false)
   const [isSorting, setIsSorting] = useState(false)
   const [isFiltering, setIsFiltering] = useState(false)
+  const [isBenchmarking, setIsBenchmarking] = useState(false)
 
   const [errorMessage, setErrorMessage] = useState("")
   const [timings, setTimings] = useState({ parseMs: null, sortMs: null, filterMs: null })
+  const [timingDetails, setTimingDetails] = useState({ parse: null, sort: null, filter: null })
+  const [mlBenchmark, setMlBenchmark] = useState(null)
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil((rowCount || 0) / rowsPerPage)), [rowCount, rowsPerPage])
-  const isBusy = !isReady || isUploading || isPaging || isSorting || isFiltering
+  const isBusy = !isReady || isUploading || isPaging || isSorting || isFiltering || isBenchmarking
 
   const initializeExportColumns = (nextColumns) => {
     const initialExportCols = {}
@@ -126,6 +174,7 @@ export default function CSVUploader() {
       const csvText = await file.text()
       const response = await postAction("PARSE_CSV", { csvText })
       const meta = applyMetadata(response.data)
+      setTimingDetails(prev => ({ ...prev, parse: response.timingBreakdown || null }))
 
       setSortRules([])
       const initialRules = buildNewRule(meta.columns)
@@ -207,6 +256,7 @@ export default function CSVUploader() {
 
       const meta = applyMetadata(response.data)
       setTimings(prev => ({ ...prev, filterMs: response.executionMs ?? null }))
+      setTimingDetails(prev => ({ ...prev, filter: response.timingBreakdown || null }))
       await loadPage(1, meta.id)
     } catch (error) {
       setErrorMessage(error.message || "Filter failed")
@@ -254,6 +304,7 @@ export default function CSVUploader() {
 
       applyMetadata(response.data)
       setTimings(prev => ({ ...prev, sortMs: response.executionMs ?? null }))
+      setTimingDetails(prev => ({ ...prev, sort: response.timingBreakdown || null }))
       await loadPage(1, datasetId)
     } catch (error) {
       setErrorMessage(error.message || "Sort failed")
@@ -353,6 +404,45 @@ export default function CSVUploader() {
     await loadPage(1, datasetId, nextSize)
   }
 
+  const handleRunMlBenchmark = async () => {
+    if (!datasetId || engine !== "wasm") return
+
+    setIsBenchmarking(true)
+    setErrorMessage("")
+
+    try {
+      const allRowsResponse = await postAction("GET_PAGE", {
+        datasetId,
+        offset: 0,
+        limit: rowCount
+      })
+
+      const datasetRows = allRowsResponse.data?.rows || []
+      if (datasetRows.length === 0) {
+        throw new Error("No rows available for benchmark")
+      }
+
+      const { experienceArr, salaryArr } = prepareMLBenchmarkData(datasetRows)
+
+      const benchmarkResponse = await postAction(
+        "START_ML_BENCHMARK",
+        {
+          experienceArr,
+          salaryArr,
+          epochs: 10000,
+          learningRate: 0.01
+        },
+        [experienceArr.buffer, salaryArr.buffer]
+      )
+
+      setMlBenchmark(benchmarkResponse.data || null)
+    } catch (error) {
+      setErrorMessage(error.message || "ML benchmark failed")
+    } finally {
+      setIsBenchmarking(false)
+    }
+  }
+
   const handlePrevPage = async () => {
     if (currentPage <= 1) return
     await loadPage(currentPage - 1)
@@ -446,6 +536,35 @@ export default function CSVUploader() {
               Filtering in Web Worker...
             </div>
           )}
+          {isBenchmarking && (
+            <div className="status-message status-info" style={{ marginBottom: "15px" }}>
+              Running ML benchmark (JS vs WASM) for 10,000 epochs...
+            </div>
+          )}
+
+          <div style={{ marginBottom: "12px", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={handleRunMlBenchmark}
+              disabled={isBusy || engine !== "wasm" || !datasetId}
+            >
+              Run ML Benchmark (10,000 epochs)
+            </button>
+            {engine !== "wasm" && (
+              <span style={{ color: "#718096", fontSize: "13px" }}>
+                Switch engine to WebAssembly (Go) to run this benchmark.
+              </span>
+            )}
+          </div>
+
+          {mlBenchmark && (
+            <div style={{ marginBottom: "16px", padding: "12px 16px", background: "#f0f4ff", borderRadius: "6px", border: "1px solid #cbd5e0", fontSize: "13px", color: "#2c3e50" }}>
+              <strong>ML Benchmark:</strong> JS <strong>{mlBenchmark.timingsMs?.js?.toFixed(2)} ms</strong> | WASM <strong>{mlBenchmark.timingsMs?.wasm?.toFixed(2)} ms</strong> |
+              JS m/b <strong>{Number(mlBenchmark.jsModel?.m || 0).toFixed(8)}</strong> / <strong>{Number(mlBenchmark.jsModel?.b || 0).toFixed(8)}</strong> |
+              WASM m/b <strong>{Number(mlBenchmark.wasmModel?.m || 0).toFixed(8)}</strong> / <strong>{Number(mlBenchmark.wasmModel?.b || 0).toFixed(8)}</strong> |
+              Δm <strong>{Number(mlBenchmark.deltas?.m || 0).toExponential(3)}</strong>, Δb <strong>{Number(mlBenchmark.deltas?.b || 0).toExponential(3)}</strong>
+            </div>
+          )}
 
           <FilterPanel
             columns={columns}
@@ -475,6 +594,7 @@ export default function CSVUploader() {
             rowsPerPage={rowsPerPage}
             totalRows={rowCount}
             timings={timings}
+            timingDetails={timingDetails}
             isBusy={isBusy}
             onRowsPerPageChange={handleRowsPerPageChange}
             onPrevPage={handlePrevPage}

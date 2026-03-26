@@ -8,13 +8,17 @@ self.window = self;
 let wasmReady = false;
 let wasmInitPromise = null;
 
-function postSuccess(requestId, action, data, executionMs) {
+function postSuccess(requestId, action, data, executionMs, trace = {}) {
   self.postMessage({
     requestId,
     action,
     ok: true,
     data,
-    executionMs
+    executionMs,
+    trace: {
+      ...trace,
+      workerRespondedAtEpoch: Date.now()
+    }
   });
 }
 
@@ -51,13 +55,17 @@ function ensureReady() {
 }
 
 self.onmessage = async (event) => {
-  const { requestId, action, payload = {} } = event.data || {};
+  const { requestId, action, payload = {}, clientSentAtEpoch } = event.data || {};
+  const traceBase = {
+    clientSentAtEpoch,
+    workerReceivedAtEpoch: Date.now()
+  };
 
   try {
     switch (action) {
       case "INIT": {
         await initWasm();
-        postSuccess(requestId, action, { ready: true });
+        postSuccess(requestId, action, { ready: true }, undefined, traceBase);
         return;
       }
 
@@ -70,7 +78,7 @@ self.onmessage = async (event) => {
         if (result) {
             result.parseTimeMs = executionMs;
         }
-        postSuccess(requestId, action, result, executionMs);
+        postSuccess(requestId, action, result, executionMs, traceBase);
         return;
       }
 
@@ -78,7 +86,7 @@ self.onmessage = async (event) => {
         ensureReady();
         const result = getPage(payload.datasetId, payload.offset ?? 0, payload.limit ?? 200);
         if (result?.error) throw new Error(result.error);
-        postSuccess(requestId, action, result);
+        postSuccess(requestId, action, result, undefined, traceBase);
         return;
       }
 
@@ -88,7 +96,7 @@ self.onmessage = async (event) => {
         const result = sortDataset(payload.datasetId, JSON.stringify(payload.rules || []));
         const executionMs = performance.now() - start;
         if (result?.error) throw new Error(result.error);
-        postSuccess(requestId, action, result, executionMs);
+        postSuccess(requestId, action, result, executionMs, traceBase);
         return;
       }
 
@@ -98,7 +106,7 @@ self.onmessage = async (event) => {
         const result = filterDataset(payload.datasetId, JSON.stringify(payload.rules || []));
         const executionMs = performance.now() - start;
         if (result?.error) throw new Error(result.error);
-        postSuccess(requestId, action, result, executionMs);
+        postSuccess(requestId, action, result, executionMs, traceBase);
         return;
       }
 
@@ -106,21 +114,21 @@ self.onmessage = async (event) => {
         ensureReady();
         const result = getDataset(payload.datasetId);
         if (result?.error) throw new Error(result.error);
-        postSuccess(requestId, action, result);
+        postSuccess(requestId, action, result, undefined, traceBase);
         return;
       }
 
       case "LIST_DATASETS": {
         ensureReady();
         const result = listDatasets();
-        postSuccess(requestId, action, result);
+        postSuccess(requestId, action, result, undefined, traceBase);
         return;
       }
 
       case "DELETE_DATASET": {
         ensureReady();
         const result = deleteDataset(payload.datasetId);
-        postSuccess(requestId, action, result);
+        postSuccess(requestId, action, result, undefined, traceBase);
         return;
       }
 
@@ -129,7 +137,7 @@ self.onmessage = async (event) => {
         const colsJson = JSON.stringify(payload.columns || []);
         const result = exportCSV(payload.datasetId, colsJson);
         if (result?.error) throw new Error(result.error);
-        postSuccess(requestId, action, result);
+        postSuccess(requestId, action, result, undefined, traceBase);
         return;
       }
 
