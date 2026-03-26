@@ -163,7 +163,7 @@ pub fn parse_csv(csv_text: &str) -> JsValue {
         parse_time_ms: 0.0,
     };
 
-    serde_wasm_bindgen::to_value(&res).unwrap()
+    res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
 }
 
 #[wasm_bindgen(js_name = getPage)]
@@ -185,7 +185,7 @@ pub fn get_page(dataset_id: &str, offset: usize, limit: usize) -> JsValue {
                 row_count: total,
                 rows: page_rows,
             };
-            serde_wasm_bindgen::to_value(&res).unwrap()
+            res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
         } else {
             serde_wasm_bindgen::to_value(&HashMap::from([("error", "dataset not found")])).unwrap()
         }
@@ -205,7 +205,7 @@ pub fn sort_dataset(dataset_id: &str, rules_json: &str) -> JsValue {
                     columns: data.columns.clone(),
                     row_count: data.rows.len(),
                 };
-                return serde_wasm_bindgen::to_value(&res).unwrap();
+                return res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap();
             }
 
             data.rows.sort_by(|a, b| {
@@ -250,7 +250,7 @@ pub fn sort_dataset(dataset_id: &str, rules_json: &str) -> JsValue {
                 columns: data.columns.clone(),
                 row_count: data.rows.len(),
             };
-            serde_wasm_bindgen::to_value(&res).unwrap()
+            res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
         } else {
             serde_wasm_bindgen::to_value(&HashMap::from([("error", "dataset not found")])).unwrap()
         }
@@ -336,7 +336,7 @@ pub fn filter_dataset(dataset_id: &str, rules_json: &str) -> JsValue {
                 columns: data.columns.clone(),
                 row_count: data.rows.len(),
             };
-            serde_wasm_bindgen::to_value(&res).unwrap()
+            res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
         } else {
             serde_wasm_bindgen::to_value(&HashMap::from([("error", "dataset not found")])).unwrap()
         }
@@ -353,7 +353,7 @@ pub fn get_dataset(dataset_id: &str) -> JsValue {
                 columns: data.columns.clone(),
                 row_count: data.rows.len(),
             };
-            serde_wasm_bindgen::to_value(&res).unwrap()
+            res.serialize(&serde_wasm_bindgen::Serializer::json_compatible()).unwrap()
         } else {
             serde_wasm_bindgen::to_value(&HashMap::from([("error", "dataset not found")])).unwrap()
         }
