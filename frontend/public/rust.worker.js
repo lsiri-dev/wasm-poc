@@ -1,6 +1,6 @@
 import init, {
   parseCSV, getPage, sortDataset, filterDataset,
-  getDataset, listDatasets, deleteDataset, exportCSV
+  getDataset, listDatasets, deleteDataset, exportCSV, factorial
 } from '/rust/rust_worker.js';
 
 self.window = self;
@@ -130,6 +130,15 @@ self.onmessage = async (event) => {
         const result = exportCSV(payload.datasetId, colsJson);
         if (result?.error) throw new Error(result.error);
         postSuccess(requestId, action, result);
+        return;
+      }
+
+      case "FACTORIAL": {
+        ensureReady();
+        const start = performance.now();
+        const result = factorial(payload.n || 0);
+        const executionMs = performance.now() - start;
+        postSuccess(requestId, action, result, executionMs);
         return;
       }
 

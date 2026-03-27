@@ -413,3 +413,12 @@ pub fn export_csv(dataset_id: &str, cols_json: &str) -> JsValue {
         }
     })
 }
+
+#[wasm_bindgen(js_name = factorial)]
+pub fn factorial(n: u32) -> f64 {
+    let mut result: f64 = 1.0;
+    for i in 1..=n {
+        result *= i as f64;
+    }
+    result
+}

@@ -26,6 +26,7 @@ func main() {
 	js.Global().Set("filterDataset", js.FuncOf(FilterDataset))
 	js.Global().Set("sortDataset", js.FuncOf(SortDataset))
 	js.Global().Set("exportCSV", js.FuncOf(ExportCSV))
+	js.Global().Set("factorial", js.FuncOf(Factorial))
 	fmt.Println("Dataset Manager Loaded")
 	select {}
 }
@@ -122,4 +123,16 @@ func convertToAnySlice(in []string) []any {
 		out[i] = v
 	}
 	return out
+}
+
+func Factorial(this js.Value, args []js.Value) any {
+	if len(args) < 1 {
+		return 0
+	}
+	n := args[0].Int()
+	var result float64 = 1
+	for i := 1; i <= n; i++ {
+		result *= float64(i)
+	}
+	return result
 }

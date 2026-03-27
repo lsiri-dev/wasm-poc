@@ -131,6 +131,15 @@ self.onmessage = async (event) => {
         return
       }
 
+      case "FACTORIAL": {
+        ensureReady()
+        const start = performance.now()
+        const result = self.factorial(payload.n || 0)
+        const executionMs = performance.now() - start
+        postSuccess(requestId, action, result, executionMs)
+        return
+      }
+
       default:
         throw new Error(`Unsupported action: ${action}`)
     }

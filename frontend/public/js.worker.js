@@ -331,6 +331,22 @@ self.onmessage = async (event) => {
         return;
       }
 
+      case "FACTORIAL": {
+        const start = performance.now();
+        const n = payload.n || 0;
+        let result = 1;
+        for (let i = 1; i <= n; i++) {
+          result *= i;
+        }
+        const executionMs = performance.now() - start;
+        self.postMessage({
+            requestId, action, ok: true,
+            data: result,
+            executionMs
+        });
+        return;
+      }
+
       default:
         throw new Error(`Unsupported action: ${action}`);
     }
