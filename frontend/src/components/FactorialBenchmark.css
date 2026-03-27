@@ -1,0 +1,63 @@
+.factorial-benchmark {
+  margin-top: 2rem;
+  padding: 1.5rem;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.factorial-benchmark h2 {
+  margin-top: 0;
+  color: #333;
+}
+
+.factorial-benchmark .controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.factorial-benchmark .controls input {
+  padding: 0.5rem;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.factorial-benchmark .controls button {
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.factorial-benchmark .controls button:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+.factorial-benchmark .controls button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.benchmark-results {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.benchmark-results th,
+.benchmark-results td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.benchmark-results th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
