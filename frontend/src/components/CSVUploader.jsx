@@ -365,7 +365,7 @@ export default function CSVUploader() {
 
   return (
     <div>
-      <h2>Upload CSV</h2>
+      <h2>Select Engine</h2>
 
       <div style={{ display: "flex", alignItems: "center", marginBottom: "20px", padding: "10px", backgroundColor: "#f0f8ff", borderRadius: "5px", border: "1px solid #cce5ff" }}>
         <h3 style={{ margin: "0 15px 0 0", fontSize: "16px" }}>Engine:</h3>
